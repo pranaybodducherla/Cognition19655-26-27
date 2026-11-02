@@ -21,17 +21,21 @@ public class Teleop extends LinearOpMode {
         while (opModeIsActive()) {
             double forward = -gamepad1.left_stick_y;
             double strafe = -gamepad1.left_stick_x;
+            double turn = -gamepad1.right_stick_x; // Added right stick for rotation
+
             double magnitude = Math.hypot(forward, strafe);
 
-            if (magnitude < STICK_DEADZONE) {
+            // If sticks are centered and there's no rotation command, stop the robot
+            if (magnitude < STICK_DEADZONE && Math.abs(turn) < STICK_DEADZONE) {
                 robot.stop();
             } else {
-                // All wheels point where the stick points; speed scales with how far it is pushed
-                robot.drive(forward, strafe, 0);
+                // Pass forward, strafe, and turn into the robot drive method
+                robot.drive(forward, strafe, turn);
             }
 
             telemetry.addData("Stick angle", Math.toDegrees(Math.atan2(strafe, forward)));
             telemetry.addData("Speed", Math.min(magnitude, 1));
+            telemetry.addData("Turn", turn);
             telemetry.update();
         }
 
