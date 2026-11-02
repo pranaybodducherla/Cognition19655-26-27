@@ -1,124 +1,92 @@
 package org.firstinspires.ftc.teamcode;
 
-import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.util.ElapsedTime;
-
-import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
+import com.qualcomm.robotcore.hardware.PwmControl.PwmRange;
+import com.qualcomm.robotcore.hardware.ServoImplEx;
+import com.qualcomm.robotcore.util.Range;
 
 public class HardwarePushbot {
-    public DcMotor upperLeft = null;
-    public DcMotor upperRight = null;
-    public DcMotor lowerLeft = null;
-    public DcMotor lowerRight = null;
-    public DcMotor intakeMotor = null;
-    public DcMotor turretLeft = null;
-    public DcMotor turretRight = null;
-    public DcMotor conveyorBelt = null;
-    public CRServo aimingServo = null;
-    public Servo turretServo = null;
 
-    HardwareMap hwMap = null;
-    private ElapsedTime period = new ElapsedTime();
+    // Distance between module centers (only the ratio matters)
+    private static final double WHEELBASE = 1.0;   // front-to-back
+    private static final double TRACK_WIDTH = 1.0; // left-to-right
 
-    final double INTAKE_OFF = 0.0;
-    final double conveyorBeltSpeed = -1.0;
-    final double TURRET_SERVO_START = 0.5;
-    final double TURRET_SERVO_UP = 0.8;
-    final double TURRET_SERVO_STOP = 0.5;
-    final double TURRET_SERVO_DOWN = 0.2;
+    // Axon MAX Mk2 in standard mode: 350 deg over 500-2500 us
+    private static final double SERVO_RANGE_DEG = 350;
+    private static final double SERVO_DIRECTION = -1;  // Axon turns clockwise with increasing PWM; flip to 1 if wheels steer the wrong way
+    private static final double DEADBAND = 0.02;
+
+    private Module[] modules;
 
     public HardwarePushbot() {}
 
-    public void init(HardwareMap ahwMap) {
-        hwMap = ahwMap;
+    public void init(HardwareMap hw) {
+        double x = WHEELBASE / 2;
+        double y = TRACK_WIDTH / 2;
 
-        upperLeft = hwMap.dcMotor.get("upperLeft");
-        upperRight = hwMap.dcMotor.get("upperRight");
-        lowerLeft = hwMap.dcMotor.get("lowerLeft");
-        lowerRight = hwMap.dcMotor.get("lowerRight");
-
-        intakeMotor = hwMap.dcMotor.get("intakeMotor");
-        turretLeft = hwMap.dcMotor.get("turretLeft");
-        turretRight = hwMap.dcMotor.get("turretRight");
-        conveyorBelt = hwMap.dcMotor.get("conveyorBelt");
-        aimingServo = hwMap.crservo.get("aimingServo");
-        turretServo = hwMap.servo.get("turretServo");
-
-        // Motor directions for TeleOp layout
-        upperLeft.setDirection(DcMotorSimple.Direction.REVERSE);
-        upperRight.setDirection(DcMotorSimple.Direction.FORWARD);
-        lowerLeft.setDirection(DcMotorSimple.Direction.FORWARD);
-        lowerRight.setDirection(DcMotorSimple.Direction.REVERSE);
-
-        // Zero motors
-        zero();
-
-        // Initialize servos
-        turretServo.setPosition(TURRET_SERVO_START);
-        conveyorBelt.setPower(0);
-        intakeMotor.setPower(INTAKE_OFF);
+        // x = forward, y = left, last value trims each module's straight-ahead servo position
+        modules = new Module[] {
+                new Module(hw, "upperLeft",  "upperLeftServo",   x,  y, 0),
+                new Module(hw, "upperRight", "upperRightServo",  x, -y, 0),
+                new Module(hw, "lowerLeft",  "lowerLeftServo",  -x,  y, 0),
+                new Module(hw, "lowerRight", "lowerRightServo", -x, -y, 0)
+        };
     }
 
-    // --- MOVEMENT METHODS ---
-    public void zero() {
-        upperLeft.setPower(0);
-        upperRight.setPower(0);
-        lowerLeft.setPower(0);
-        lowerRight.setPower(0);
+    /** Inputs in [-1, 1]. Forward = +, strafe left = +, turn counter-clockwise = +. */
+    public void drive(double forward, double strafe, double turn) {
+        double[] speed = new double[modules.length];
+        double[] angle = new double[modules.length];
+        double max = 1;
+
+        for (int i = 0; i < modules.length; i++) {
+            double vx = forward - turn * modules[i].y;
+            double vy = strafe + turn * modules[i].x;
+            speed[i] = Math.hypot(vx, vy);
+            angle[i] = Math.toDegrees(Math.atan2(vy, vx));
+            max = Math.max(max, speed[i]);
+        }
+
+        for (int i = 0; i < modules.length; i++) {
+            modules[i].set(speed[i] / max, angle[i]);
+        }
     }
 
-    public void forward(double speed) {
-        upperLeft.setPower(speed);
-        upperRight.setPower(speed);
-        lowerLeft.setPower(speed);
-        lowerRight.setPower(speed);
+    public void stop() {
+        drive(0, 0, 0);
     }
 
-    public void backward(double speed) {
-        forward(-speed);
+    private static class Module {
+        final DcMotor motor;
+        final ServoImplEx servo;
+        final double x, y, servoOffset;
+
+        Module(HardwareMap hw, String motorName, String servoName, double x, double y, double servoOffset) {
+            this.motor = hw.get(DcMotor.class, motorName);
+            this.servo = hw.get(ServoImplEx.class, servoName);
+            servo.setPwmRange(new PwmRange(500, 2500));
+            this.x = x;
+            this.y = y;
+            this.servoOffset = servoOffset;
+            motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        }
+
+        void set(double speed, double angleDeg) {
+            if (speed < DEADBAND) {
+                motor.setPower(0); // hold current steering angle
+                return;
+            }
+
+            // Steer to the nearest equivalent angle within +/-90 deg, reversing the wheel if needed
+            if (Math.abs(angleDeg) > 90) {
+                angleDeg -= Math.copySign(180, angleDeg);
+                speed = -speed;
+            }
+
+            double position = 0.5 + servoOffset + SERVO_DIRECTION * angleDeg / SERVO_RANGE_DEG;
+            servo.setPosition(Range.clip(position, 0, 1));
+            motor.setPower(speed);
+        }
     }
-
-    public void turnLeft(double speed) {
-        upperLeft.setPower(speed);
-        upperRight.setPower(-speed);
-        lowerLeft.setPower(speed);
-        lowerRight.setPower(-speed);
-    }
-
-    public void turnRight(double speed) {
-        turnLeft(-speed);
-    }
-
-    // --- INTAKE ---
-    public void intakeStart() { intakeMotor.setPower(0.8); }
-    public void intakeStop() { intakeMotor.setPower(0); }
-
-    // --- OUTTAKE ---
-    public void outTakeOn(double power) {
-        turretRight.setPower(power);
-        turretLeft.setPower(-power);
-    }
-
-    public void outTakeOff() {
-        turretRight.setPower(0);
-        turretLeft.setPower(0);
-    }
-
-    // --- CONVEYOR ---
-    public void conveyorBeltOn() { conveyorBelt.setPower(conveyorBeltSpeed); }
-    public void conveyorBeltOff() { conveyorBelt.setPower(0); }
-
-    // --- TURRET SERVO ---
-    public void turretServoBack() { turretServo.setPosition(TURRET_SERVO_UP); }
-    public void turretServoForward() { turretServo.setPosition(TURRET_SERVO_DOWN); }
-    public void turretServoStop() { turretServo.setPosition(TURRET_SERVO_STOP); }
-
-    // --- AIMING SERVO ---
-    public void turretAim(double power) { aimingServo.setPower(power); }
-    public void turretAimStop() { aimingServo.setPower(0); }
 }
