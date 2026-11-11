@@ -1,29 +1,19 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
 @Autonomous(name = "BlueAutoBottom", group = "Autonomous")
-public class BlueAutoBottom extends LinearOpMode {
-
-    private final HardwarePushbot robot = new HardwarePushbot();
-
+public class BlueAutoBottom extends AutoBase {
     @Override
     public void runOpMode() {
         robot.init(hardwareMap);
         waitForStart();
 
-        move(0.5, 0, 0, 1600);
+        driveFor(0.5, 0, 0, 1600);
         move(0, 0, -0.15, 1200); // turn right
-        move(0.5, 0, 0, 300);
+        driveFor(0.5, 0, 0, 300);
+        // aimAtTag(2000);
 
-        robot.stop();
-    }
-
-    // Counter-clockwise turn = positive
-    private void move(double forward, double strafe, double turn, long ms) {
-        robot.drive(forward, strafe, turn);
-        sleep(ms);
         robot.stop();
     }
 }

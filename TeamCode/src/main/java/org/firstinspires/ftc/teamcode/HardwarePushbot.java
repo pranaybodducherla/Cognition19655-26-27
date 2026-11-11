@@ -1,10 +1,16 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.hardware.limelightvision.LLResult;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.PwmControl.PwmRange;
 import com.qualcomm.robotcore.hardware.ServoImplEx;
 import com.qualcomm.robotcore.util.Range;
+
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 public class HardwarePushbot {
 
@@ -14,10 +20,13 @@ public class HardwarePushbot {
 
     // Axon MAX Mk2 in standard mode: 350 deg over 500-2500 us
     private static final double SERVO_RANGE_DEG = 350;
-    private static final double SERVO_DIRECTION = -1;  // Axon turns clockwise with increasing PWM; flip to 1 if wheels steer the wrong way
+    private static final double SERVO_DIRECTION = -1;  // flip to 1 if wheels steer the wrong way
     private static final double DEADBAND = 0.02;
 
     private Module[] modules;
+
+    public IMU imu;
+    public Limelight3A limelight;
 
     public HardwarePushbot() {}
 
@@ -32,6 +41,19 @@ public class HardwarePushbot {
                 new Module(hw, "lowerLeft",  "lowerLeftServo",  -x,  y, 0),
                 new Module(hw, "lowerRight", "lowerRightServo", -x, -y, 0)
         };
+
+        // Gyro. Change these two directions to match how your Control Hub is mounted.
+        imu = hw.get(IMU.class, "imu");
+        imu.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(
+                RevHubOrientationOnRobot.LogoFacingDirection.UP,
+                RevHubOrientationOnRobot.UsbFacingDirection.FORWARD)));
+        imu.resetYaw();
+
+        // Limelight
+        limelight = hw.get(Limelight3A.class, "limelight");
+        limelight.setPollRateHz(100);
+        limelight.pipelineSwitch(0);
+        limelight.start();
     }
 
     /** Inputs in [-1, 1]. Forward = +, strafe left = +, turn counter-clockwise = +. */
@@ -51,6 +73,25 @@ public class HardwarePushbot {
         for (int i = 0; i < modules.length; i++) {
             modules[i].set(speed[i] / max, angle[i]);
         }
+    }
+
+    /** Same as drive(), but forward = away from the driver no matter which way the robot faces. */
+    public void driveFieldCentric(double forward, double strafe, double turn) {
+        double h = getHeading();
+        double f =  forward * Math.cos(h) + strafe * Math.sin(h);
+        double s = -forward * Math.sin(h) + strafe * Math.cos(h);
+        drive(f, s, turn);
+    }
+
+    /** Heading in radians, counter-clockwise = positive. */
+    public double getHeading() {
+        return imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
+    }
+
+    /** Latest valid Limelight result, or null if no target is visible. */
+    public LLResult getTarget() {
+        LLResult r = limelight.getLatestResult();
+        return (r != null && r.isValid()) ? r : null;
     }
 
     public void stop() {
