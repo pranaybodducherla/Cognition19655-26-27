@@ -36,10 +36,14 @@ public class HardwarePushbot {
 
         // x = forward, y = left, last value trims each module's straight-ahead servo position
         modules = new Module[] {
-                new Module(hw, "upperLeft",  "upperLeftServo",   x,  y, 0),
-                new Module(hw, "upperRight", "upperRightServo",  x, -y, 0),
-                new Module(hw, "lowerLeft",  "lowerLeftServo",  -x,  y, 0),
-                new Module(hw, "lowerRight", "lowerRightServo", -x, -y, 0)
+                new Module(hw, "a",  "as",   x,  y, 0),
+                new Module(hw, "b", "bs",  x, -y, 0),
+                new Module(hw, "c",  "cs",  -x,  y, 0),
+                new Module(hw, "d", "ds", -x, -y, 0)
+               // new Module(hw, "upperLeft",  "upperLeftServo",   x,  y, 0),
+               // new Module(hw, "upperRight", "upperRightServo",  x, -y, 0),
+               // new Module(hw, "lowerLeft",  "lowerLeftServo",  -x,  y, 0),
+               // new Module(hw, "lowerRight", "lowerRightServo", -x, -y, 0)
         };
 
         // Gyro. Change these two directions to match how your Control Hub is mounted.
