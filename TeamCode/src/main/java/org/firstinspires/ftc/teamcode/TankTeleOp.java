@@ -29,7 +29,9 @@ public class TankTeleOp extends LinearOpMode {
     private static final boolean[] LEFT_REVERSED  = {false, false};
     private static final boolean[] RIGHT_REVERSED = {false, true}; // d was reversed in swervev3
 
-    private static final double DRIVE_SPEED = 0.8;
+    // 1.0 = 100% motor power, the maximum the hardware allows (there is nothing above 1.0).
+    // Motors run RUN_WITHOUT_ENCODER, so the SDK puts no hidden speed cap on them.
+    private static final double DRIVE_SPEED = 1.0;
     private static final double TURN_SPEED = 1.0;
     private static final double SLOW = 0.35;
 
