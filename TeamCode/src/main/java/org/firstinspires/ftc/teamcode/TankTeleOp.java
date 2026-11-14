@@ -2,16 +2,19 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
 
 /**
  * Tank drive for the swerve robot with every module zip-tied pointing straight forward.
- * The steering servos are not used at all.
+ * The steering servos are never driven; they're switched fully off at start so they go limp.
  *
  * CONTROLS (gamepad1)
  *   left stick up/down     forward / backward
- *   right stick left/right spin in place (overrides the left stick, no curving)
+ *   right stick left/right turn in place (overrides the left stick, no curving);
+ *                          the outside side pushes at full power, the inside pulls back at half
  *   left bumper (hold)     slow mode
  * INTAKE / FLYWHEEL (either gamepad, skipped if not in the robot config)
  *   right trigger          intake in
@@ -32,7 +35,11 @@ public class TankTeleOp extends LinearOpMode {
     // 1.0 = 100% motor power, the maximum the hardware allows (there is nothing above 1.0).
     // Motors run RUN_WITHOUT_ENCODER, so the SDK puts no hidden speed cap on them.
     private static final double DRIVE_SPEED = 1.0;
-    private static final double TURN_SPEED = 1.0;
+    private static final double TURN_SPEED = 1.0;   // power on the OUTSIDE of the turn
+    private static final double INNER_TURN = 0.5;   // inside of the turn pulls back at this fraction
+    // Protects the zip-tied modules and servo gears: power can't jump straight to 100%,
+    // it rises over about 1/4 second instead of yanking the modules.
+    private static final double RAMP_PER_SECOND = 4.0;
     private static final double SLOW = 0.35;
 
     private static final double INTAKE_POWER = 1.0;
@@ -48,7 +55,9 @@ public class TankTeleOp extends LinearOpMode {
         }
         DcMotor intake = optional("intake");
         DcMotor flywheel = optional("outtake");
+        int servosOff = switchServosOff();
 
+        telemetry.addData("steering servos", "%d switched OFF", servosOff);
         telemetry.addData("intake", intake == null ? "not in config, skipped" : "ok");
         telemetry.addData("flywheel", flywheel == null ? "not in config, skipped" : "ok");
         telemetry.update();
@@ -57,6 +66,10 @@ public class TankTeleOp extends LinearOpMode {
 
         boolean flywheelOn = false;
         boolean prevBumper = false;
+        double leftOut = 0;
+        double rightOut = 0;
+        ElapsedTime timer = new ElapsedTime();
+        double lastT = timer.seconds();
 
         while (opModeIsActive()) {
             // ---- Drive ----
@@ -68,12 +81,15 @@ public class TankTeleOp extends LinearOpMode {
             double scale = gamepad1.left_bumper ? SLOW : 1;
             double leftPower;
             double rightPower;
-            if (turn != 0) {
-                // TURNING: no curving. The forward stick is ignored and the two sides push in
-                // opposite directions, so the whole robot is forced to spin in place.
-                // Turn right = left wheels forward, right wheels backward (and the reverse for left).
+            if (turn > 0) {
+                // TURN RIGHT: no curving, forward stick ignored.
+                // Left side (outside of the turn) pushes forward hard, right side pulls back less.
                 leftPower = turn * TURN_SPEED;
+                rightPower = -turn * TURN_SPEED * INNER_TURN;
+            } else if (turn < 0) {
+                // TURN LEFT: right side (outside of the turn) pushes forward hard, left pulls back less.
                 rightPower = -turn * TURN_SPEED;
+                leftPower = turn * TURN_SPEED * INNER_TURN;
             } else {
                 // STRAIGHT: both sides the same
                 leftPower = forward * DRIVE_SPEED;
@@ -82,8 +98,15 @@ public class TankTeleOp extends LinearOpMode {
             leftPower = Range.clip(leftPower, -1, 1) * scale;
             rightPower = Range.clip(rightPower, -1, 1) * scale;
 
-            for (DcMotor m : left) m.setPower(leftPower);
-            for (DcMotor m : right) m.setPower(rightPower);
+            // Ramp: move toward the wanted power gradually instead of jumping
+            double now = timer.seconds();
+            double step = RAMP_PER_SECOND * (now - lastT);
+            lastT = now;
+            leftOut += Range.clip(leftPower - leftOut, -step, step);
+            rightOut += Range.clip(rightPower - rightOut, -step, step);
+
+            for (DcMotor m : left) m.setPower(leftOut);
+            for (DcMotor m : right) m.setPower(rightOut);
 
             // ---- Intake ----
             double in = Math.max(gamepad1.right_trigger, gamepad2.right_trigger);
@@ -97,7 +120,8 @@ public class TankTeleOp extends LinearOpMode {
             prevBumper = bumper;
             if (flywheel != null) flywheel.setPower(flywheelOn ? FLYWHEEL_POWER : 0);
 
-            telemetry.addData("left / right", "%.2f / %.2f", leftPower, rightPower);
+            telemetry.addData("left / right", "%.2f / %.2f", leftOut, rightOut);
+            telemetry.addData("steering servos", "%d switched OFF", servosOff);
             telemetry.addData("speed", gamepad1.left_bumper ? "SLOW" : "full");
             telemetry.addData("intake", "%.2f", intakePower);
             telemetry.addData("flywheel", flywheelOn ? "ON" : "off");
@@ -117,6 +141,25 @@ public class TankTeleOp extends LinearOpMode {
         m.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         m.setPower(0);
         return m;
+    }
+
+    /**
+     * The steering servos are NEVER driven. This only makes sure they're completely off
+     * (power 0 and signal cut), so they go limp and can't hold or fight the zip-tied modules.
+     */
+    private int switchServosOff() {
+        int count = 0;
+        for (String name : new String[] {"as", "bs", "cs", "ds"}) {
+            try {
+                CRServo s = hardwareMap.get(CRServo.class, name);
+                s.setPower(0);
+                s.getController().pwmDisable();
+                count++;
+            } catch (IllegalArgumentException e) {
+                // not in the config: nothing to switch off
+            }
+        }
+        return count;
     }
 
     private DcMotor optional(String name) {
