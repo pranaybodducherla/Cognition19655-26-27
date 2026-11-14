@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.util.Range;
  *
  * CONTROLS (gamepad1)
  *   left stick up/down     forward / backward
- *   right stick left/right turn
+ *   right stick left/right spin in place (overrides the left stick, no curving)
  *   left bumper (hold)     slow mode
  * INTAKE / FLYWHEEL (either gamepad, skipped if not in the robot config)
  *   right trigger          intake in
@@ -66,11 +66,21 @@ public class TankTeleOp extends LinearOpMode {
             if (Math.abs(turn) < 0.05) turn = 0;
 
             double scale = gamepad1.left_bumper ? SLOW : 1;
-            double leftPower = forward * DRIVE_SPEED + turn * TURN_SPEED;
-            double rightPower = forward * DRIVE_SPEED - turn * TURN_SPEED;
-            double biggest = Math.max(1, Math.max(Math.abs(leftPower), Math.abs(rightPower)));
-            leftPower = leftPower / biggest * scale;
-            rightPower = rightPower / biggest * scale;
+            double leftPower;
+            double rightPower;
+            if (turn != 0) {
+                // TURNING: no curving. The forward stick is ignored and the two sides push in
+                // opposite directions, so the whole robot is forced to spin in place.
+                // Turn right = left wheels forward, right wheels backward (and the reverse for left).
+                leftPower = turn * TURN_SPEED;
+                rightPower = -turn * TURN_SPEED;
+            } else {
+                // STRAIGHT: both sides the same
+                leftPower = forward * DRIVE_SPEED;
+                rightPower = forward * DRIVE_SPEED;
+            }
+            leftPower = Range.clip(leftPower, -1, 1) * scale;
+            rightPower = Range.clip(rightPower, -1, 1) * scale;
 
             for (DcMotor m : left) m.setPower(leftPower);
             for (DcMotor m : right) m.setPower(rightPower);
