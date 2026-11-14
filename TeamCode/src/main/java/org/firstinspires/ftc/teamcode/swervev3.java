@@ -5,151 +5,105 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.AnalogInput;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import java.util.List;
-import org.firstinspires.ftc.robotcore.external.JavaUtil;
 
-@TeleOp(name = "swervev3 (Blocks to Java)")
+/**
+ * Your swervev3, with the steering working exactly like before, plus the wheels now drive.
+ *
+ * Left stick: push the way you want to go. The modules turn to face that way (same as before),
+ * and once ALL four are lined up the wheels drive. Push further = faster.
+ */
+@TeleOp(name = "swervev3")
 public class swervev3 extends LinearOpMode {
 
-    private CRServo as;
-    private CRServo bs;
-    private CRServo cs;
-    private CRServo ds;
-    private DcMotor a;
-    private DcMotor b;
-    private DcMotor c;
-    private DcMotor d;
-    private AnalogInput aa;
-    private AnalogInput ba;
-    private AnalogInput ca;
-    private AnalogInput da;
+    // ---- Same values as your original ----
+    private static final double[] OFFSETS = {50, 70, 10, 70};
+    private static final double STEER_POWER = 0.3;      // servo power while turning
+    private static final double STEER_DEADBAND = 20;    // degrees: close enough, stop turning
+    private static final double STICK_DEADBAND = 0.2;   // stick must be pushed this far
 
-    List servoangle;
-    double JoystickAngle;
+    // ---- New: driving ----
+    private static final double DRIVE_SPEED = 0.5;      // max wheel power (your old trigger used 0.5)
+    private static final double KEEP_DRIVING = 35;      // once moving, only stop if a module gets this far off
 
-    /**
-     * Describe this function...
-     */
-    private void set_power(double servoname, double power) {
-        double bp;
+    private final CRServo[] steer = new CRServo[4];
+    private final DcMotor[] drive = new DcMotor[4];
+    private final AnalogInput[] enc = new AnalogInput[4];
 
-        bp = power;
-        power = 0.123123;
-        power = bp;
-        if (servoname == 1) {
-            as.setPower(power);
-        } else if (servoname == 2) {
-            bs.setPower(power);
-        } else if (servoname == 3) {
-            cs.setPower(power);
-        } else if (servoname == 4) {
-            ds.setPower(power);
-        }
-    }
+    private final double[] servoangle = new double[4];
+    private final double[] diff = new double[4];
+    private double joystickAngle;
+    private double joystickMag;
+    private boolean driving = false;
 
-    /**
-     * This OpMode offers POV (point-of-view) style TeleOp control for a direct drive robot.
-     *
-     * In this POV mode, the left joystick (up and down) moves the robot forward and back, and the
-     * right joystick (left and right) spins the robot left (counterclockwise) and right (clockwise).
-     */
     @Override
     public void runOpMode() {
-        List diff;
-        double i;
-        List offsets;
+        String[] steerNames = {"as", "bs", "cs", "ds"};
+        String[] driveNames = {"a", "b", "c", "d"};
+        String[] encNames = {"aa", "ba", "ca", "da"};
+        for (int i = 0; i < 4; i++) {
+            steer[i] = hardwareMap.get(CRServo.class, steerNames[i]);
+            drive[i] = hardwareMap.get(DcMotor.class, driveNames[i]);
+            enc[i] = hardwareMap.get(AnalogInput.class, encNames[i]);
+            steer[i].setDirection(CRServo.Direction.FORWARD);
+            drive[i].setDirection(DcMotor.Direction.FORWARD);
+            drive[i].setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            drive[i].setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
+        drive[3].setDirection(DcMotor.Direction.REVERSE); // d was reversed in your original
 
-        as = hardwareMap.get(CRServo.class, "as");
-        bs = hardwareMap.get(CRServo.class, "bs");
-        cs = hardwareMap.get(CRServo.class, "cs");
-        ds = hardwareMap.get(CRServo.class, "ds");
-        a = hardwareMap.get(DcMotor.class, "a");
-        b = hardwareMap.get(DcMotor.class, "b");
-        c = hardwareMap.get(DcMotor.class, "c");
-        d = hardwareMap.get(DcMotor.class, "d");
-        aa = hardwareMap.get(AnalogInput.class, "aa");
-        ba = hardwareMap.get(AnalogInput.class, "ba");
-        ca = hardwareMap.get(AnalogInput.class, "ca");
-        da = hardwareMap.get(AnalogInput.class, "da");
-
-        // Reverse one of the drive motors.
-        // You will have to determine which motor to reverse for your robot.
-        // In this example, the right motor was reversed so that positive
-        // applied power makes it move the robot in the forward direction.
-        a.setDirection(DcMotor.Direction.FORWARD);
-        // You will have to determine which motor to reverse for your robot.
-        // In this example, the right motor was reversed so that positive
-        // applied power makes it move the robot in the forward direction.
-        b.setDirection(DcMotor.Direction.FORWARD);
-        // You will have to determine which motor to reverse for your robot.
-        // In this example, the right motor was reversed so that positive
-        // applied power makes it move the robot in the forward direction.
-        c.setDirection(DcMotor.Direction.FORWARD);
-        // You will have to determine which motor to reverse for your robot.
-        // In this example, the right motor was reversed so that positive
-        // applied power makes it move the robot in the forward direction.
-        d.setDirection(DcMotor.Direction.REVERSE);
-        as.setDirection(CRServo.Direction.FORWARD);
-        bs.setDirection(CRServo.Direction.FORWARD);
-        cs.setDirection(CRServo.Direction.FORWARD);
-        ds.setDirection(CRServo.Direction.FORWARD);
-        servoangle = JavaUtil.createListWith(0, 0, 0, 0);
-        diff = JavaUtil.createListWith(0, 0, 0, 0);
-        offsets = JavaUtil.createListWith(50, 70, 10, 70);
         waitForStart();
-        if (opModeIsActive()) {
-            // Put run blocks here.
-            while (opModeIsActive()) {
-                // Put loop blocks here.
-                // Use left stick to drive and right stick to turn
-                JoystickAngle = Math.atan2(gamepad1.left_stick_y, gamepad1.left_stick_x) / Math.PI * 180;
-                servoangle = JavaUtil.createListWith(aa.getVoltage() * (360 / aa.getMaxVoltage()) - 180, ba.getVoltage() * (360 / ba.getMaxVoltage()) - 180, ca.getVoltage() * (360 / ca.getMaxVoltage()) - 180, da.getVoltage() * (360 / da.getMaxVoltage()) - 180);
-                for (i = 1; i <= 4; i++) {
-                    JavaUtil.inListSet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false, ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue() + ((Double) JavaUtil.inListGet(offsets, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue());
-                    if (JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false) > 180) {
-                        JavaUtil.inListSet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false, ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue() - 360);
-                    } else if (JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false) < -180) {
-                        JavaUtil.inListSet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false, ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue() + 360);
-                    }
-                    JavaUtil.inListSet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false, JoystickAngle - ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue());
-                    if (JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false) > 180) {
-                        JavaUtil.inListSet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false, ((Double) JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue() - 360);
-                    } else if (JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false) < -180) {
-                        JavaUtil.inListSet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false, ((Double) JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue() + 360);
-                    }
-                    if (Math.sqrt(Math.pow(gamepad1.left_stick_x, 2) + Math.pow(gamepad1.left_stick_y, 2)) >= 0.2 && Math.abs(((Double) JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue()) >= 20) {
-                        set_power(i, (((Double) JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue() / Math.abs(((Double) JavaUtil.inListGet(diff, JavaUtil.AtMode.FROM_START, (int) (i - 1), false)).doubleValue())) * 0.3);
-                    } else {
-                        set_power(i, 0);
-                    }
+
+        while (opModeIsActive()) {
+            joystickAngle = Math.atan2(gamepad1.left_stick_y, gamepad1.left_stick_x) / Math.PI * 180;
+            joystickMag = Math.min(1, Math.hypot(gamepad1.left_stick_x, gamepad1.left_stick_y));
+            boolean stickPushed = joystickMag >= STICK_DEADBAND;
+
+            // ---- Steering: same as your original ----
+            double worst = 0;
+            for (int i = 0; i < 4; i++) {
+                servoangle[i] = wrap(enc[i].getVoltage() * (360 / enc[i].getMaxVoltage()) - 180 + OFFSETS[i]);
+                diff[i] = wrap(joystickAngle - servoangle[i]);
+                worst = Math.max(worst, Math.abs(diff[i]));
+
+                if (stickPushed && Math.abs(diff[i]) >= STEER_DEADBAND) {
+                    steer[i].setPower(Math.signum(diff[i]) * STEER_POWER);
+                } else {
+                    steer[i].setPower(0);
                 }
-                if (gamepad1.rightTriggerWasPressed()) {
-                    a.setPower(0.5);
-                    b.setPower(0.5);
-                    c.setPower(0.5);
-                    d.setPower(0.5);
-                }
-                if (gamepad1.rightTriggerWasReleased()) {
-                    a.setPower(0);
-                    b.setPower(0);
-                    c.setPower(0);
-                    d.setPower(0);
-                }
-                telemetry2();
             }
+
+            // ---- Driving: only once every module faces the right way ----
+            if (!stickPushed) {
+                driving = false;
+            } else {
+                driving = worst < (driving ? KEEP_DRIVING : STEER_DEADBAND);
+            }
+            double wheelPower = driving ? joystickMag * DRIVE_SPEED : 0;
+            for (DcMotor m : drive) m.setPower(wheelPower);
+
+            telemetry2(wheelPower);
+        }
+
+        for (int i = 0; i < 4; i++) {
+            steer[i].setPower(0);
+            drive[i].setPower(0);
         }
     }
 
-    /**
-     * Describe this function...
-     */
-    private void telemetry2() {
-        telemetry.addData("joystick angle", JoystickAngle);
-        telemetry.addData("joystick magnitude", Math.sqrt(Math.pow(gamepad1.left_stick_x, 2) + Math.pow(gamepad1.left_stick_y, 2)));
-        telemetry.addData("servo 1 angle", ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) 0, false)).doubleValue());
-        telemetry.addData("servo 2 angle", ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) 1, false)).doubleValue());
-        telemetry.addData("servo 3 angle", ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) 2, false)).doubleValue());
-        telemetry.addData("servo 4 angle", ((Double) JavaUtil.inListGet(servoangle, JavaUtil.AtMode.FROM_START, (int) 3, false)).doubleValue());
+    private void telemetry2(double wheelPower) {
+        telemetry.addData("joystick angle", joystickAngle);
+        telemetry.addData("joystick magnitude", joystickMag);
+        telemetry.addData("wheels", driving ? "DRIVING" : "waiting for modules to line up");
+        telemetry.addData("wheel power", wheelPower);
+        for (int i = 0; i < 4; i++) {
+            telemetry.addData("servo " + (i + 1) + " angle", "%.1f  (off by %.1f)", servoangle[i], diff[i]);
+        }
         telemetry.update();
+    }
+
+    private static double wrap(double deg) {
+        deg = (deg + 180) % 360;
+        if (deg < 0) deg += 360;
+        return deg - 180;
     }
 }
