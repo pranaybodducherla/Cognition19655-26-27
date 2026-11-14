@@ -63,18 +63,25 @@ public class MainTeleOp extends LinearOpMode {
 
     // ===================== STEERING: exponential dampener =====================
     // power = MIN + (MAX - MIN) * (1 - e^(-(error - deadband) / EASE_ANGLE))
-    private static final double MAX_STEER = 0.5;       // power when far from target
-    private static final double MIN_STEER = 0.08;      // power right before stopping
+    private static final double MAX_STEER = 1.0;       // full servo torque: modules must fight robot weight
+    private static final double MIN_STEER = 0.15;      // above the CR servo's own deadband, so it holds
     private static final double EASE_ANGLE = 20;       // bigger = slows down earlier
     private static final double STEER_DEADBAND = 3;    // degrees: close enough
     private static final double FLIP_HYST = 10;        // degrees past 90 before flipping
-    private static final double ALIGN_TOLERANCE = 15;  // no wheel drives until ALL are this close
+    // Hysteresis so drive doesn't flicker on/off (the "twerk") when load shoves a module:
+    private static final double ALIGN_START = 15;      // wheels start driving once ALL are this close
+    private static final double ALIGN_KEEP = 35;       // keep driving until one is this far off
+    // At START each steering servo is nudged briefly to learn which way it turns,
+    // so a backwards servo can't spin forever chasing its target.
+    private static final double DETECT_POWER = 0.25;
+    private static final double DETECT_TIME = 0.3;     // seconds
+    private static final double DETECT_MIN_MOVE = 3;   // degrees the nudge must move a module
 
     // ===================== DRIVING =====================
     private static final double DRIVE_SPEED = 0.8;     // max translation power
     private static final double TURN_SPEED = 0.6;      // max rotation power
     private static final double SLOW_MODE = 0.35;      // speed multiplier while left bumper held
-    private static final double DRIVE_RAMP = 3.0;      // max drive power change per second
+    private static final double DRIVE_RAMP = 1.5;      // max drive power change per second (gentle = less shove)
     private static final double MIN_MODULE_SPEED = 0.02;
     private static final double DEADBAND_ON = 0.12;    // stick: start moving above this
     private static final double DEADBAND_OFF = 0.08;   // stick: stop moving below this
@@ -118,6 +125,8 @@ public class MainTeleOp extends LinearOpMode {
     private final double[] wantedSpeed = new double[4]; // 0..1
     private final double[] drivePower = new double[4];  // ramped output
     private final boolean[] flipped = new boolean[4];   // aiming backwards, driving reversed
+    private final double[] steerSign = {1, 1, 1, 1};    // learned at START: +1 or -1
+    private final double[] steerMoved = new double[4];  // how far the START nudge moved each module
 
     @Override
     public void runOpMode() {
@@ -170,6 +179,7 @@ public class MainTeleOp extends LinearOpMode {
         telemetry.update();
 
         waitForStart();
+        detectSteerDirections(hubs);
 
         boolean fieldCentric = FIELD_CENTRIC_DEFAULT && imu != null;
         boolean active = false;
@@ -179,6 +189,7 @@ public class MainTeleOp extends LinearOpMode {
         boolean prevUp = false;
         boolean prevDown = false;
         boolean wasReady = false;
+        boolean driving = false;
         double flywheelRpm = FLYWHEEL_RPM_DEFAULT;
         boolean firstLoop = true;
         double[] moduleTarget = new double[4];
@@ -270,9 +281,11 @@ public class MainTeleOp extends LinearOpMode {
                     steerModule(i);
                     worst = Math.max(worst, Math.abs(err[i]));
                 }
-                aligned = worst <= ALIGN_TOLERANCE;
-                scale = aligned ? Math.cos(Math.toRadians(worst)) : 0;
+                driving = worst <= (driving ? ALIGN_KEEP : ALIGN_START);
+                aligned = driving;
+                scale = driving ? Math.cos(Math.toRadians(worst)) : 0;
             } else {
+                driving = false;
                 for (int i = 0; i < 4; i++) {
                     wantedSpeed[i] = 0;
                     steer[i].setPower(0);
@@ -354,8 +367,10 @@ public class MainTeleOp extends LinearOpMode {
             telemetry.addData("flywheel", flywheelState);
             telemetry.addData("flywheel rpm", "target %.0f  actual %.0f", flywheelRpm, actualRpm);
             for (int i = 0; i < 4; i++) {
-                telemetry.addData("mod " + DRIVE_NAMES[i], "ang %.0f  tgt %.0f  err %.0f  pwr %.2f%s",
-                        angle[i], target[i], err[i], drivePower[i], flipped[i] ? "  FLIP" : "");
+                telemetry.addData("mod " + DRIVE_NAMES[i], "ang %.0f  tgt %.0f  err %.0f  pwr %.2f%s%s%s",
+                        angle[i], target[i], err[i], drivePower[i], flipped[i] ? "  FLIP" : "",
+                        steerSign[i] < 0 ? "  steer-reversed" : "",
+                        Math.abs(steerMoved[i]) < DETECT_MIN_MOVE ? "  SERVO/ENCODER NOT RESPONDING" : "");
             }
             telemetry.addData("loop ms", "%.1f", dt * 1000);
             telemetry.update();
@@ -389,7 +404,31 @@ public class MainTeleOp extends LinearOpMode {
             e = wrap(e + 180);
         }
         err[i] = e;
-        steer[i].setPower(Math.signum(e) * steerPower(Math.abs(e)));
+        steer[i].setPower(steerSign[i] * Math.signum(e) * steerPower(Math.abs(e)));
+    }
+
+    /** Nudge every steering servo forward briefly and learn which way the angle moves. */
+    private void detectSteerDirections(List<LynxModule> hubs) {
+        double[] prev = new double[4];
+        for (LynxModule hub : hubs) hub.clearBulkCache();
+        for (int i = 0; i < 4; i++) {
+            prev[i] = readAngle(i);
+            steerMoved[i] = 0;
+            steer[i].setPower(DETECT_POWER);
+        }
+        ElapsedTime t = new ElapsedTime();
+        while (opModeIsActive() && t.seconds() < DETECT_TIME) {
+            for (LynxModule hub : hubs) hub.clearBulkCache();
+            for (int i = 0; i < 4; i++) {
+                double a = readAngle(i);
+                steerMoved[i] += wrap(a - prev[i]);
+                prev[i] = a;
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            steer[i].setPower(0);
+            steerSign[i] = steerMoved[i] < 0 ? -1 : 1;
+        }
     }
 
     /** Exponential dampener: full power far away, easing down near the target. */
