@@ -30,7 +30,7 @@ public class TankTeleOp extends LinearOpMode {
     private static final boolean[] RIGHT_REVERSED = {false, true}; // d was reversed in swervev3
 
     private static final double DRIVE_SPEED = 0.8;
-    private static final double TURN_SPEED = 0.6;
+    private static final double TURN_SPEED = 1.0;
     private static final double SLOW = 0.35;
 
     private static final double INTAKE_POWER = 1.0;
