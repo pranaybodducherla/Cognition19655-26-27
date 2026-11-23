@@ -6,12 +6,8 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 public class BlueAutoTop extends AutoBase {
     @Override
     public void runOpMode() {
-        robot.init(hardwareMap);
+        initializeRobot();
         waitForStart();
-
-        driveFor(-0.5, 0, 0, 1700);
-        // aimAtTag(2000);
-
-        robot.stop();
+        if (opModeIsActive()) driveFor(-0.5, 0, 0, 1700);
     }
 }

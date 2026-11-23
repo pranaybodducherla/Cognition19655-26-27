@@ -4,36 +4,32 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 
-@TeleOp(name = "MotorTest", group = "Test")
+/** Press and hold one button to test that wheel. Right bumper tests all wheels. */
+@TeleOp(name = "Motor Test", group = "Test")
 public class MotorTest extends LinearOpMode {
-
-    private static final double POWER = 0.3;
+    private static final double POWER = 0.25;
 
     @Override
     public void runOpMode() {
-        DcMotor upperLeft = hardwareMap.get(DcMotor.class, "a");
-        DcMotor upperRight = hardwareMap.get(DcMotor.class, "b");
-        DcMotor lowerLeft = hardwareMap.get(DcMotor.class, "c");
-        DcMotor lowerRight = hardwareMap.get(DcMotor.class, "d");
+        HardwarePushbot robot = new HardwarePushbot(hardwareMap);
+        DcMotor[] motors = {robot.frontLeft, robot.frontRight, robot.backLeft, robot.backRight};
+        String[] names = {"front-left (a)", "front-right (b)", "back-left (c)", "back-right (d)"};
 
-        telemetry.addLine("Y = upperLeft, B = upperRight, X = lowerLeft, A = lowerRight");
-        telemetry.addLine("Right bumper = all four");
+        telemetry.addLine("Hold Y/B/X/A to test FL/FR/BL/BR. Hold RB for all.");
+        telemetry.addLine("Test with wheels raised; confirm direction before driving.");
         telemetry.update();
         waitForStart();
 
         while (opModeIsActive()) {
             boolean all = gamepad1.right_bumper;
-
-            upperLeft.setPower(all || gamepad1.y ? POWER : 0);
-            upperRight.setPower(all || gamepad1.b ? POWER : 0);
-            lowerLeft.setPower(all || gamepad1.x ? POWER : 0);
-            lowerRight.setPower(all || gamepad1.a ? POWER : 0);
-
-            telemetry.addData("upperLeft", upperLeft.getCurrentPosition());
-            telemetry.addData("upperRight", upperRight.getCurrentPosition());
-            telemetry.addData("lowerLeft", lowerLeft.getCurrentPosition());
-            telemetry.addData("lowerRight", lowerRight.getCurrentPosition());
+            boolean[] pressed = {gamepad1.y, gamepad1.b, gamepad1.x, gamepad1.a};
+            for (int i = 0; i < motors.length; i++) {
+                motors[i].setPower(all || pressed[i] ? POWER : 0);
+                telemetry.addData(names[i], "power %.2f, ticks %d",
+                        all || pressed[i] ? POWER : 0, motors[i].getCurrentPosition());
+            }
             telemetry.update();
         }
+        robot.stop();
     }
 }
